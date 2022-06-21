@@ -7,7 +7,8 @@
       },
       "both": {
         "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}",
-        "number_of_characters": 95
+        "extra_characters": "äöüÄÖÜß",
+        "number_of_characters": 102
       }
     }
   },
@@ -26,19 +27,13 @@
     }
   },
   "data": {
-    "text_column": "SentimentText",
-    "label_column": "Sentiment",
+    "text_column": "sentence",
+    "label_column": "dialect_norm",
     "max_length": 150,
     "num_of_classes": 2,
     "encoding": null,
     "chunksize": 50000,
-    "max_rows": 100000,
-    "preprocessing_steps": [
-      "lower",
-      "remove_hashtags",
-      "remove_urls",
-      "remove_user_mentions"
-    ]
+    "max_rows": 100000
   },
   "training": {
     "batch_size": 128,

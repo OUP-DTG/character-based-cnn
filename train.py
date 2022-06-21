@@ -24,17 +24,17 @@ from src.focal_loss import FocalLoss
 
 
 def train(
-    model,
-    training_generator,
-    optimizer,
-    criterion,
-    epoch,
-    writer,
-    log_file,
-    scheduler,
-    class_names,
-    args,
-    print_every=25,
+        model,
+        training_generator,
+        optimizer,
+        criterion,
+        epoch,
+        writer,
+        log_file,
+        scheduler,
+        class_names,
+        args,
+        print_every=25,
 ):
     model.train()
     losses = utils.AverageMeter()
@@ -128,7 +128,7 @@ def train(
 
 
 def evaluate(
-    model, validation_generator, criterion, epoch, writer, log_file, print_every=25
+        model, validation_generator, criterion, epoch, writer, log_file, print_every=25
 ):
     model.eval()
     losses = utils.AverageMeter()
@@ -196,7 +196,6 @@ def evaluate(
 
 
 def run(args, both_cases=False):
-
     if args.flush_history == 1:
         objects = os.listdir(args.log_path)
         for f in objects:
@@ -390,10 +389,10 @@ def run(args, both_cases=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Character Based CNN for text classification")
-    parser.add_argument("--data_path", type=str, default="./data/train.csv")
+    parser.add_argument("--data_path", type=str, default="archimob_sentences.csv")
     parser.add_argument("--validation_split", type=float, default=0.2)
-    parser.add_argument("--label_column", type=str, default="Sentiment")
-    parser.add_argument("--text_column", type=str, default="SentimentText")
+    parser.add_argument("--label_column", type=str, default="dialect_norm")
+    parser.add_argument("--text_column", type=str, default="sentence")
     parser.add_argument("--max_rows", type=int, default=None)
     parser.add_argument("--chunksize", type=int, default=50000)
     parser.add_argument("--encoding", type=str, default="utf-8")
@@ -409,10 +408,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--alphabet",
         type=str,
-        default="abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+ =<>()[]{}",
+        default="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\/\|_@#$%^&*~`+-=<>()[]{}",
     )
-    parser.add_argument("--number_of_characters", type=int, default=69)
-    parser.add_argument("--extra_characters", type=str, default="")
+    parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
+    parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
     parser.add_argument("--max_length", type=int, default=150)
     parser.add_argument("--dropout_input", type=float, default=0.1)
     parser.add_argument("--epochs", type=int, default=10)
