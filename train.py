@@ -406,13 +406,21 @@ if __name__ == "__main__":
     parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
     parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
 
+    # parser.add_argument(
+    #     "--alphabet",
+    #     type=str,
+    #     default="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\/\|_@#$%^&*~`+-=<>()[]{}",
+    # )
+
     parser.add_argument(
         "--alphabet",
         type=str,
-        default="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\/\|_@#$%^&*~`+-=<>()[]{}",
+        default="() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ",
     )
-    parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
-    parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
+    # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
+    parser.add_argument("--number_of_characters", type=int, default=87)
+    # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
+    parser.add_argument("--extra_characters", type=str, default="")
     parser.add_argument("--max_length", type=int, default=150)
     parser.add_argument("--dropout_input", type=float, default=0.1)
     parser.add_argument("--epochs", type=int, default=10)
