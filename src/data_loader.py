@@ -29,6 +29,8 @@ def load_data(args):
         nrows=args.max_rows,
         sep=args.sep,
     )
+    # df.drop_duplicates(subset=['A', 'C'], keep=False)
+    # print(chunks)
     texts = []
     labels = []
     for df_chunk in tqdm(chunks):
@@ -51,16 +53,33 @@ def load_data(args):
             clean_data = [
                 (text, label)
                 for (text, label) in zip(texts, labels)
-                if label not in [label_ignored]
+                if label not in label_ignored
             ]
 
             texts = [text for (text, label) in clean_data]
             labels = [label for (text, label) in clean_data]
 
-            labels = list(map(lambda l: {1: 0, 2: 0, 4: 1, 5: 1}[l], labels))
+            labels = list(map(lambda l: {1: 0, 2: 0, 4: 1, 5: 1}[l], labels))  # TODO is this line making all labels 1 and 0?
 
         else:
-            labels = list(map(lambda l: {1: 0, 2: 0, 3: 1, 4: 2, 5: 2}[l], labels))
+
+            label_ignored = args.label_ignored
+            print(f"These are the labels ignored: {label_ignored}")
+
+            clean_data = [
+                (text, label)
+                for (text, label) in zip(texts, labels)
+                if label not in label_ignored
+            ]
+
+            texts = [text for (text, label) in clean_data]
+            labels = [label for (text, label) in clean_data]
+            print(f"These are the labels used: {set(labels)}")
+
+            # labels = list(map(lambda l: {'AG': 0, 'BE': 1, 'BS': 2, 'GL': 3, 'GR': 4, 'LU': 5, 'NW': 6, 'SG': 7,
+            #                              'SH': 8, 'SZ': 9, 'UR': 10, 'VS': 11, 'ZH': 12}[l], labels))
+
+            labels = list(map(lambda l: {'BE': 0, 'BS': 1, 'LU': 2, 'ZH': 3}[l], labels))
 
     if bool(args.balance):
 

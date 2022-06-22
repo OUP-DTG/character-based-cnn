@@ -15,7 +15,7 @@ There's in general a downward trend first, a minimum and upward trend.
 One heuristic to find the optimal parameters:
 
 - max_lr = argmin_lr(loss) / 10
-- mix_lr = max_lr / 10
+- min_lr = max_lr / 10
 
 
 reference: https://towardsdatascience.com/adaptive-and-cyclical-learning-rates-using-pytorch-2bf904d18dee
