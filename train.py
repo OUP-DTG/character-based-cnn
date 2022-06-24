@@ -20,6 +20,7 @@ from sklearn.model_selection import train_test_split
 from src.data_loader import MyDataset, load_data
 from src import utils
 from src.model import CharacterLevelCNN
+from src.sentence_model import SentenceCNN, SimpleModel
 from src.focal_loss import FocalLoss
 
 
@@ -258,7 +259,7 @@ def run(args, both_cases=False):
     training_generator = DataLoader(training_set, **training_params)
     validation_generator = DataLoader(validation_set, **validation_params)
 
-    model = CharacterLevelCNN(args, number_of_classes)
+    model = SentenceCNN(args, number_of_classes)
     if torch.cuda.is_available():
         model.cuda()
 
@@ -349,6 +350,7 @@ def run(args, both_cases=False):
 
         # learning rate scheduling
 
+        # leave learning rate constant
         if args.scheduler == "step":
             if args.optimizer == "sgd" and ((epoch + 1) % 3 == 0) and epoch > 0:
                 current_lr = optimizer.state_dict()["param_groups"][0]["lr"]
@@ -418,7 +420,7 @@ if __name__ == "__main__":
         default="() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ",
     )
     # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
-    parser.add_argument("--number_of_characters", type=int, default=87)
+    parser.add_argument("--number_of_characters", type=int, default=88)
     # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
     parser.add_argument("--extra_characters", type=str, default="")
     parser.add_argument("--max_length", type=int, default=150)
@@ -433,7 +435,7 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=None)
 
     parser.add_argument(
-        "--scheduler", type=str, default="step", choices=["clr", "step"]
+        "--scheduler", type=str, default="none", choices=["clr", "step", "none"]
     )
     # parser.add_argument("--min_lr", type=float, default=1.7e-3)
     parser.add_argument("--min_lr", type=float, default=2e-3)
