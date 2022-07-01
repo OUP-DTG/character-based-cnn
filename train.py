@@ -22,7 +22,7 @@ from src import utils
 from src.model import CharacterLevelCNN
 from src.sentence_model import SentenceCNN, SimpleModel
 from src.focal_loss import FocalLoss
-
+import os
 
 def train(
         model,
@@ -454,4 +454,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", type=str, default="test_model")
 
     args = parser.parse_args()
+
+    os.makedirs(args.log_path, exist_ok=True)
+    os.makedirs(args.output, exist_ok=True)
+
     run(args)

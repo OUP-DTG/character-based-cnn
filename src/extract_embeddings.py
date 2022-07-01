@@ -3,6 +3,7 @@ import torch
 from src.sentence_model import SentenceCNN
 import os
 from src import utils
+from torch.utils.data import DataLoader
 
 
 def extract_embeddings_from_trained_model(args):
@@ -13,7 +14,19 @@ def extract_embeddings_from_trained_model(args):
     model = SentenceCNN(args, args.number_of_classes)
     state = torch.load(os.path.join(_up_n(os.path.dirname(__file__), 1), 'models', args.model))
     model.load_state_dict(state)
+
     embeddings = []
+
+    data_generator = DataLoader(validation_set, **validation_params)
+    sentence = "mir sind alli di chliine gschwüschterti sind zu verwante choo"
+    sentence = utils.process_text(["lower"], sentence)
+
+    model.eval()
+    model.share_memory()  # NOTE: this is required for the ``fork`` method to work
+    with torch.no_grad():
+
+        outputs = model(sentence)
+
 
     layer = model._modules.get('conv_layers')[-2]  # access the penultimate layer
     # layer = model._modules
