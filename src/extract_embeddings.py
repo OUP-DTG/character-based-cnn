@@ -1,10 +1,11 @@
 import argparse
-import torch
-from src.sentence_model import SentenceCNN
 import os
-from src import utils
+
+import torch
 from torch.utils.data import DataLoader
+
 from src.data_loader import MyDataset, load_data
+from src.sentence_model import SentenceCNN
 
 
 def extract_embeddings_from_trained_model(args):
@@ -31,34 +32,17 @@ def extract_embeddings_from_trained_model(args):
     sentences_set = MyDataset(texts, labels, args)
 
     data_generator = DataLoader(sentences_set, **data_params)
-    # sentence = "mir sind alli di chliine gschwüschterti sind zu verwante choo"
-    # sentence = utils.process_text(["lower"], sentence)
 
     model.eval()
     model.share_memory()  # NOTE: this is required for the ``fork`` method to work
     with torch.no_grad():
-        # outputs = model(sentence)
-        outputs = model(data_generator)
-        print(outputs)
-
-
-
-    # layer = model._modules.get('conv_layers')[-2]  # access the penultimate layer
-    # layer = model._modules
-    # for child in model.named_children():
-    #     print(child)
-    # print(model.named_children())
-    # print(type(layer.get('conv_layers')[-2]))
-    # print(type(layer.get('conv_layers')[-2]))
-    # _ = layer.register_forward_hook(copy_embeddings)
-    # print(embeddings)
+        for idx, batch in enumerate(data_generator):
+            features, labels = batch
+            temp_outputs = model(features)
+            embeddings.append(temp_outputs)
+            
+    print(embeddings)
     return embeddings
-
-
-def copy_embeddings(m, i, o):
-    """Copy embeddings from the penultimate layer."""
-    o = o[:, :, 0, 0].detach().numpy().tolist()
-    embeddings.append(o)
 
 
 if __name__ == "__main__":
