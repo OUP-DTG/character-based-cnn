@@ -20,3 +20,5 @@ threadpoolctl==3.1.0
 torch==1.11.0
 tqdm==4.64.0
 typing_extensions==4.2.0
+
+nltk~=3.7
