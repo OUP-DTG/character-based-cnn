@@ -1,82 +1,120 @@
-import argparse
+import random
 import os
+import sys
 
-import nltk
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 import torch
-from nltk.cluster import KMeansClusterer
-from sklearn import cluster, metrics
+from numpy.random import uniform
+from sklearn.datasets import make_blobs
+from sklearn.preprocessing import StandardScaler
 
-from src.sentence_model import SentenceCNN
+
+def euclidean(point, data):
+    """
+    Euclidean distance between point & data.
+    Point has dimensions (m,), data has dimensions (n,m), and output will be of size (n,).
+    """
+    return np.sqrt(np.sum((point - data)**2, axis=1))
 
 
-def run(args):
-    model = SentenceCNN(args, args.number_of_classes)
+class KMeans:
+    def __init__(self, n_clusters=4, max_iter=300):
+        self.n_clusters = n_clusters
+        self.max_iter = max_iter
 
-    state = torch.load(os.path.join('models', args.model))
-    model.load_state_dict(state)
+    def fit(self, X_train):
+        # Initialize the centroids, using the "k-means++" method, where a random datapoint is selected as the first,
+        # then the rest are initialized w/ probabilities proportional to their distances to the first
+        # Pick a random point from train data for first centroid
+        self.centroids = [random.choice(X_train)]
+        for _ in range(self.n_clusters-1):
+            # Calculate distances from points to the centroids
+            dists = np.sum([euclidean(centroid, X_train) for centroid in self.centroids], axis=0)
+            # Normalize the distances
+            dists /= np.sum(dists)
+            # Choose remaining points based on their distances
+            new_centroid_idx, = np.random.choice(range(len(X_train)), size=1, p=dists)
+            self.centroids += [X_train[new_centroid_idx]]
+        # This initial method of randomly selecting centroid starts is less effective
+        # min_, max_ = np.min(X_train, axis=0), np.max(X_train, axis=0)
+        # self.centroids = [uniform(min_, max_) for _ in range(self.n_clusters)]
+        # Iterate, adjusting centroids until converged or until passed max_iter
+        iteration = 0
+        prev_centroids = None
+        while np.not_equal(self.centroids, prev_centroids).any() and iteration < self.max_iter:
+            # Sort each datapoint, assigning to nearest centroid
+            sorted_points = [[] for _ in range(self.n_clusters)]
+            for x in X_train:
+                dists = euclidean(x, self.centroids)
+                centroid_idx = np.argmin(dists)
+                sorted_points[centroid_idx].append(x)
+            # Push current centroids to previous, reassign centroids as mean of the points belonging to them
+            prev_centroids = self.centroids
+            self.centroids = [np.mean(cluster, axis=0) for cluster in sorted_points]
+            for i, centroid in enumerate(self.centroids):
+                if np.isnan(centroid).any():  # Catch any np.nans, resulting from a centroid having no points
+                    self.centroids[i] = prev_centroids[i]
+            iteration += 1
 
-    x = model[model.vocab]
+    def evaluate(self, X):
+        centroids = []
+        centroid_idxs = []
+        for x in X:
+            dists = euclidean(x, self.centroids)
+            centroid_idx = np.argmin(dists)
+            centroids.append(self.centroids[centroid_idx])
+            centroid_idxs.append(centroid_idx)
+        return centroids, centroid_idxs
 
-    print(x)
 
-    num_clusters = 4
-
-    kclusterer = KMeansClusterer(num_clusters, distance=nltk.cluster.util.cosine_distance, repeats=25)
-    assigned_clusters = kclusterer.cluster(x, assign_clusters=True)
-    print(assigned_clusters)
-
-    words = list(model.vocab)
-    for i, word in enumerate(words):
-        print(f"{word}: {str(assigned_clusters[i])}")
-
-    kmeans = cluster.KMeans(n_clusters=num_clusters)
-    kmeans.fit(x)
-
-    labels = kmeans.labels_
-    centroids = kmeans.cluster_centers_
-
-    print("Cluster id for input data")
-    print(labels)
-    print("Centroids data")
-    print(centroids)
-    print("Score (opposite of the value of X on the K-means objective which is sum of distances of samples to their closest cluster centre):")
-    print(kmeans.score(x))
-
-    silhouette_score = metrics.silhouette_score(x, labels, metric="euclidean")
-    print(f"Silhouete_score: {silhouette_score}")
+def load_tensors(input_filename):
+    tensors = torch.load(input_filename)
+    return tensors
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        "Testing a pretrained Character Based CNN for text classification"
-    )
-    parser.add_argument("--model", type=str, help="path for pre-trained model",
-                        default="model_test_model_epoch_9_maxlen_150_lr_0.01_loss_0.7056_acc_0.7302_f1_0.7184.pth")
+    # Create a dataset of 2D distributions
+    centers = 4
+    # X_train, true_labels = make_blobs(n_samples=100, centers=centers, random_state=42)
+    # print(X_train)
+    # print(true_labels)
 
-    # arguments needed for the model
-    parser.add_argument(
-        "--alphabet",
-        type=str,
-        default="() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ",
-    )
-    parser.add_argument("--number_of_characters", type=int, default=88)
-    parser.add_argument("--extra_characters", type=str, default="")
-    parser.add_argument("--max_length", type=int, default=150)
-    parser.add_argument("--number_of_classes", type=int, default=4)
-    # parser.add_argument("--data_path", type=str, default="../archimob_sentences_deduplicated.csv")
-    parser.add_argument("--label_column", type=str, default="dialect_norm")
-    parser.add_argument("--text_column", type=str, default="sentence")
-    parser.add_argument("--chunksize", type=int, default=50000)
-    parser.add_argument("--encoding", type=str, default="utf-8")
-    parser.add_argument("--sep", type=str, default=",")
-    parser.add_argument("--steps", nargs="+", default=["lower"])
-    parser.add_argument("--max_rows", type=int, default=None)
-    parser.add_argument("--group_labels", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--ignore_center", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ'])
-    parser.add_argument("--ratio", type=float, default=1)
-    parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
+    X_train = []
+    true_labels = []
+    input_embeddings = load_tensors(os.path.join('src', 'embeddings', 'tensors.full.pt'))
+    for batch in input_embeddings:
+        vectors, labels = batch
+        # print(vectors)
+        X_train.extend(vectors.tolist())
+        true_labels.extend(labels.tolist())
 
-    args = parser.parse_args()
-    run(args)
+    # print(input_embeddings)
+    # print(X_train)
+    # print(true_labels)
+    # sys.exit()
+
+    X_train = StandardScaler().fit_transform(X_train)
+    # Fit centroids to dataset
+    kmeans = KMeans(n_clusters=centers)
+    kmeans.fit(X_train)
+    # View results
+    class_centers, classification = kmeans.evaluate(X_train)
+    # print(class_centers)
+    # print(classification)
+    # sys.exit()
+
+    sns.scatterplot(x=[X[0] for X in X_train],
+                    y=[X[1] for X in X_train],
+                    hue=true_labels,
+                    style=classification,
+                    palette="deep",
+                    legend=None
+                    )
+    plt.plot([x for x, _ in kmeans.centroids],
+             [y for _, y in kmeans.centroids],
+             'k+',
+             markersize=10,
+             )
+    plt.show()

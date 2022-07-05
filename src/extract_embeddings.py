@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 import torch
 from torch.utils.data import DataLoader
@@ -39,10 +40,25 @@ def extract_embeddings_from_trained_model(args):
         for idx, batch in enumerate(data_generator):
             features, labels = batch
             temp_outputs = model(features)
-            embeddings.append(temp_outputs)
-            
+            # embeddings.append(temp_outputs)
+            embeddings.append([temp_outputs, labels])
+
     print(embeddings)
+
+    if not os.path.exists(args.output_folder):
+        os.mkdir(args.output_folder)
+    output_filename = f"{args.output_folder}/tensors.full.pt"
+    save_tensors(embeddings, output_filename)
+    print(len(embeddings))
+    # the above returns 285, which is the number of batches consisting of 128 data points each (last one is smaller),
+    # creating a total of 36,391 data points/vectors
+    # each row/data point is a vector of 4 dimensions e.g. [0.8045, -1.5245, 0.6591, -0.0142]
+    sys.exit()
     return embeddings
+
+
+def save_tensors(tensors, output_filename):
+    torch.save(tensors, output_filename)
 
 
 if __name__ == "__main__":
@@ -76,6 +92,7 @@ if __name__ == "__main__":
     parser.add_argument("--ratio", type=float, default=1)
     parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
     parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
+    parser.add_argument("--output_folder", type=str, help="path for pre-trained embeddings", default="embeddings")
 
     args = parser.parse_args()
     embeddings = extract_embeddings_from_trained_model(args)
