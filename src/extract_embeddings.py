@@ -53,7 +53,7 @@ def extract_embeddings_from_trained_model(args):
     # the above returns 285, which is the number of batches consisting of 128 data points each (last one is smaller),
     # creating a total of 36,391 data points/vectors
     # each row/data point is a vector of 4 dimensions e.g. [0.8045, -1.5245, 0.6591, -0.0142]
-    sys.exit()
+    # sys.exit()
     return embeddings
 
 
