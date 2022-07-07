@@ -36,13 +36,18 @@ def extract_embeddings_from_trained_model(args):
 
     model.eval()
     model.share_memory()  # NOTE: this is required for the ``fork`` method to work
+    full_embeddings = []
+    full_pred_labels = []
     with torch.no_grad():
         for idx, batch in enumerate(data_generator):
             features, labels = batch
             temp_outputs = model(features)
             # embeddings.append(temp_outputs)
-            embeddings.append([temp_outputs, labels])
+            full_embeddings.extend(temp_outputs)
+            full_pred_labels.extend(labels)
+            #embeddings.append([temp_outputs, labels])
 
+    embeddings = [full_embeddings, full_pred_labels]
     print(embeddings)
 
     if not os.path.exists(args.output_folder):
@@ -53,7 +58,7 @@ def extract_embeddings_from_trained_model(args):
     # the above returns 285, which is the number of batches consisting of 128 data points each (last one is smaller),
     # creating a total of 36,391 data points/vectors
     # each row/data point is a vector of 4 dimensions e.g. [0.8045, -1.5245, 0.6591, -0.0142]
-    sys.exit()
+    #sys.exit()
     return embeddings
 
 

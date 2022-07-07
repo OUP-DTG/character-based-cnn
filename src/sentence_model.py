@@ -54,6 +54,8 @@ def get_conv_layer(vocab_size: int, kernel_size: int, output_channels):
             padding=0,
             stride=1,
         ),
+        #nn.Tanh(),
+        #nn.Softmax(),
         nn.ReLU(),
         nn.MaxPool1d(3),
     )
@@ -75,6 +77,7 @@ class SentenceCNN(nn.Module):
 
         # Length reduced by a factor of 3 by MaxPool1d layer.
         self.max_conv_length = (args.max_length - 1) // 3
+        #self.max_conv_length = args.max_length - 1
         convolution_output_size = convolution_channels * self.conv_layers_to_use
         fc_input_size = convolution_output_size * self.max_conv_length
 

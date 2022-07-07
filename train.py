@@ -24,6 +24,11 @@ from src.sentence_model import SentenceCNN, SimpleModel
 from src.focal_loss import FocalLoss
 import os
 
+
+SWISS_GERMAN_ALPHABET = "() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ"
+NUM_SG_CHARS = len(SWISS_GERMAN_ALPHABET)
+
+
 def train(
         model,
         training_generator,
@@ -417,10 +422,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--alphabet",
         type=str,
-        default="() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ",
+        default=SWISS_GERMAN_ALPHABET,
     )
     # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
-    parser.add_argument("--number_of_characters", type=int, default=88)
+    parser.add_argument("--number_of_characters", type=int, default=NUM_SG_CHARS)
     # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
     parser.add_argument("--extra_characters", type=str, default="")
     parser.add_argument("--max_length", type=int, default=150)
