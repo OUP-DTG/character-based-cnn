@@ -9,6 +9,7 @@ import torch
 from numpy.random import uniform
 from sklearn.datasets import make_blobs
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 
 
 def euclidean(point, data):
@@ -96,22 +97,38 @@ if __name__ == "__main__":
     # sys.exit()
 
     X_train = StandardScaler().fit_transform(X_train)
+
+    X_reduced = PCA(n_components=2).fit_transform(X_train)  ## add dimensionality reduction
+
     # Fit centroids to dataset
     kmeans = KMeans(n_clusters=centers)
-    kmeans.fit(X_train)
+    # kmeans.fit(X_train)  ## without dimensionality reduction
+    kmeans.fit(X_reduced)
+
     # View results
-    class_centers, classification = kmeans.evaluate(X_train)
-    # print(class_centers)
-    # print(classification)
+    # class_centers, classification = kmeans.evaluate(X_train)
+    class_centers, classification = kmeans.evaluate(X_reduced)
+    print(class_centers)
+    print(classification)
     # sys.exit()
 
-    sns.scatterplot(x=[X[0] for X in X_train],
-                    y=[X[1] for X in X_train],
+
+    # sns.scatterplot(x=[X[0] for X in X_train],
+    #                 y=[X[1] for X in X_train],
+    #                 hue=true_labels,
+    #                 style=classification,
+    #                 palette="deep",
+    #                 legend=None
+    #                 )
+
+    sns.scatterplot(x=[X[0] for X in X_reduced],
+                    y=[X[1] for X in X_reduced],
                     hue=true_labels,
                     style=classification,
                     palette="deep",
                     legend=None
                     )
+
     plt.plot([x for x, _ in kmeans.centroids],
              [y for _, y in kmeans.centroids],
              'k+',
