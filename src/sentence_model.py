@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Models for processing input sentences.
 
 Notation:
@@ -11,6 +12,9 @@ Notation:
 import torch
 import torch.nn as nn
 from torch.nn.functional import pad
+
+SWISS_GERMAN_ARCHIMOB_ALPHABET = "() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ"
+SWISS_GERMAN_SWISSDIAL_ALPHABET = "0123456789ABDEGHLRSUVZ_ abcdefghijklmnopqrstuvwxyzßàáâãäçèéêëíïñòóôöøüě"
 
 
 class SimpleModel(nn.Module):
@@ -65,6 +69,8 @@ class SentenceCNN(nn.Module):
     def __init__(self, args, number_of_classes):
         super().__init__()
 
+        self.embeddings = args.embeddings
+
         convolution_channels = 128  # i.e. C = 128
         # I see no better results from using all 5, and it is slower.
         self.conv_layers_to_use = 3
@@ -96,6 +102,7 @@ class SentenceCNN(nn.Module):
                 module.weight.data.normal_(mean, std)
 
     def forward(self, x):
+
         # x is a tensor of shape (B, L, V)
         x = x.transpose(1, 2)  # (B, V, L)
         # Run different convolutions on input.
@@ -107,5 +114,8 @@ class SentenceCNN(nn.Module):
         xout = torch.cat(padded_results, 1)  # (B, C * n, L // 3)
         xout = xout.view(xout.size(0), -1)  # (B, C * n * (L // 3))
         x = self.fc1(xout)  # (B, 1024)
-        x = self.fc2(x)  # (B, N)
-        return x
+        if self.embeddings:
+            return xout, x
+        else:
+            x = self.fc2(x)  # (B, N)
+            return x

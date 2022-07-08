@@ -1,8 +1,8 @@
-import os
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import sys
 import shutil
-import json
 import argparse
-import time
 from datetime import datetime
 from collections import Counter
 
@@ -10,7 +10,6 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from tensorboardX import SummaryWriter
 
@@ -19,14 +18,9 @@ from sklearn.model_selection import train_test_split
 
 from src.data_loader import MyDataset, load_data
 from src import utils
-from src.model import CharacterLevelCNN
-from src.sentence_model import SentenceCNN, SimpleModel
+from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET
 from src.focal_loss import FocalLoss
 import os
-
-
-SWISS_GERMAN_ALPHABET = "() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ"
-NUM_SG_CHARS = len(SWISS_GERMAN_ALPHABET)
 
 
 def train(
@@ -408,7 +402,7 @@ if __name__ == "__main__":
     # parser.add_argument("--group_labels", type=int, default=0, choices=[0, 1])
     parser.add_argument("--group_labels", type=int, default=1, choices=[0, 1])
     parser.add_argument("--ignore_center", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ'])
+    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ', "DE"])
     parser.add_argument("--ratio", type=float, default=1)
     parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
     parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
@@ -419,13 +413,17 @@ if __name__ == "__main__":
     #     default="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\/\|_@#$%^&*~`+-=<>()[]{}",
     # )
 
+    """
     parser.add_argument(
         "--alphabet",
         type=str,
-        default=SWISS_GERMAN_ALPHABET,
+        default=SWISS_GERMAN_ARCHIMOB_ALPHABET,
     )
+    """
+
+    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial'])
     # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
-    parser.add_argument("--number_of_characters", type=int, default=NUM_SG_CHARS)
+    # parser.add_argument("--number_of_characters", type=int, default=NUM_SG_CHARS)
     # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
     parser.add_argument("--extra_characters", type=str, default="")
     parser.add_argument("--max_length", type=int, default=150)
@@ -457,8 +455,19 @@ if __name__ == "__main__":
     parser.add_argument("--flush_history", type=int, default=1, choices=[0, 1])
     parser.add_argument("--output", type=str, default="./models/")
     parser.add_argument("--model_name", type=str, default="test_model")
+    parser.add_argument("--embeddings", action="store_true", help="flag to extract embeddings")
 
     args = parser.parse_args()
+
+    if args.input_alphabet == 'swissdial':
+        setattr(args, 'alphabet', SWISS_GERMAN_SWISSDIAL_ALPHABET)
+        setattr(args, 'number_of_characters', len(SWISS_GERMAN_SWISSDIAL_ALPHABET))
+    elif args.input_alphabet == 'archimob':
+        setattr(args, 'alphabet', SWISS_GERMAN_ARCHIMOB_ALPHABET)
+        setattr(args, 'number_of_characters', len(SWISS_GERMAN_ARCHIMOB_ALPHABET))
+    else:
+        print("Wrong input alphabet value. Valid values are 'archimob' or 'swissdial'")
+        sys.exit()
 
     os.makedirs(args.log_path, exist_ok=True)
     os.makedirs(args.output, exist_ok=True)

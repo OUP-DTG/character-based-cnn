@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import random
 import os
-import sys
+import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -76,40 +78,52 @@ def load_tensors(input_filename):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        "Plotting embeddings"
+    )
+    parser.add_argument("--tensors_file", type=str, help="path to the tensor embeddings", default=os.path.join('src', 'embeddings', 'tensors.full.pt'))
+    parser.add_argument("--plot_name", type=str, help="plot name", default="cluster")
+    parser.add_argument("--plot_file", type=str, help="plot output file", default="plot.png")
+
+    args = parser.parse_args()
+
     # Create a dataset of 2D distributions
     centers = 4
     # X_train, true_labels = make_blobs(n_samples=100, centers=centers, random_state=42)
     # print(X_train)
     # print(true_labels)
 
-    X_train = []
-    true_labels = []
-    input_embeddings = load_tensors(os.path.join('src', 'embeddings', 'tensors.full.pt'))
-    for batch in input_embeddings:
-        vectors, labels = batch
-        # print(vectors)
-        X_train.extend(vectors.tolist())
-        true_labels.extend(labels.tolist())
+    print("loading tensors with prediction output...")
+    # contains a triplet of list of embeddings, list of probabilities, gold label
+    input_triplet = load_tensors(args.tensors_file)
+
+    print("converting to list of numbers... ")
+    X_train = [x.tolist() for x in input_triplet[0]]
+    true_labels = [int(x) for x in input_triplet[2]]
 
     # print(input_embeddings)
     # print(X_train)
     # print(true_labels)
     # sys.exit()
 
+    print("scaling...")
     X_train = StandardScaler().fit_transform(X_train)
 
     X_reduced = PCA(n_components=2).fit_transform(X_train)  ## add dimensionality reduction
 
+    print("creating cluster...")
     # Fit centroids to dataset
     kmeans = KMeans(n_clusters=centers)
     # kmeans.fit(X_train)  ## without dimensionality reduction
     kmeans.fit(X_reduced)
 
+    print("generating plot")
     # View results
     # class_centers, classification = kmeans.evaluate(X_train)
     class_centers, classification = kmeans.evaluate(X_reduced)
-    print(class_centers)
-    print(classification)
+    #print(class_centers)
+    #print(classification)
     # sys.exit()
 
 
@@ -134,4 +148,7 @@ if __name__ == "__main__":
              'k+',
              markersize=10,
              )
+
+    plt.title(args.plot_name)
+    plt.savefig(args.plot_file)
     plt.show()

@@ -6,3 +6,11 @@ src/__pycache__/
 logs/
 models/
 .idea/
+venv/
+venv2/
+__pycache__/
+src/archimob_balanced_embeddings/tensors.full.pt
+src/archimob_embeddings/tensors.full.pt
+src/embeddings/tensors.full.pt
+src/swissdial_balanced_embeddings/tensors.full.pt
+src/swissdial_embeddings/tensors.full.pt
