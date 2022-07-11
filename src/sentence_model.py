@@ -17,6 +17,16 @@ SWISS_GERMAN_ARCHIMOB_ALPHABET = "() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abc
 SWISS_GERMAN_SWISSDIAL_ALPHABET = "0123456789ABDEGHLRSUVZ_ abcdefghijklmnopqrstuvwxyzßàáâãäçèéêëíïñòóôöøüě"
 
 
+def reset_weights(m):
+    """
+    Try resetting model weights to avoid weight leakage.
+    """
+    for layer in m.children():
+        if hasattr(layer, 'reset_parameters'):
+            print(f'Reset trainable parameters of layer = {layer}')
+            layer.reset_parameters()
+
+
 class SimpleModel(nn.Module):
     """A very simple model with just two fully-connected layers.
 

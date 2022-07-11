@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 import sys
 import shutil
-import argparse
+import os
+
+from types import SimpleNamespace
 from datetime import datetime
 from collections import Counter
 
@@ -20,8 +22,8 @@ from src.data_loader import MyDataset, load_data
 from src import utils
 from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET
 from src.focal_loss import FocalLoss
-import os
 
+from cli_arguments import read_cli_arguments
 
 def train(
         model,
@@ -195,7 +197,173 @@ def evaluate(
     return losses.avg.item(), accuracies.avg.item(), f1_test
 
 
-def run(args, both_cases=False):
+def run(args, setup_args):
+
+    (
+        train_texts,
+        val_texts,
+        train_labels,
+        val_labels,
+        train_sample_weights,
+        _,
+    ) = train_test_split(
+        setup_args.texts,
+        setup_args.labels,
+        setup_args.sample_weights,
+        test_size=args.validation_split,
+        random_state=42,
+        stratify=setup_args.labels,
+    )
+
+
+    if bool(args.use_sampler):
+        train_sample_weights = torch.from_numpy(train_sample_weights)
+        sampler = WeightedRandomSampler(
+            train_sample_weights.type("torch.DoubleTensor"), len(train_sample_weights)
+        )
+        setup_args.training_params["sampler"] = sampler
+        setup_args.training_params["shuffle"] = False
+
+    training_set = MyDataset(train_texts, train_labels, args)
+    validation_set = MyDataset(val_texts, val_labels, args)
+
+    training_generator = DataLoader(training_set, **setup_args.training_params)
+    validation_generator = DataLoader(validation_set, **setup_args.validation_params)
+
+    model = SentenceCNN(args, setup_args.number_of_classes)
+    if torch.cuda.is_available():
+        model.cuda()
+
+    if not bool(args.focal_loss):
+        if bool(args.class_weights):
+            class_counts = dict(Counter(train_labels))
+            m = max(class_counts.values())
+            for c in class_counts:
+                class_counts[c] = m / class_counts[c]
+            weights = []
+            for k in sorted(class_counts.keys()):
+                weights.append(class_counts[k])
+
+            weights = torch.Tensor(weights)
+            if torch.cuda.is_available():
+                weights = weights.cuda()
+                print(f"passing weights to CrossEntropyLoss : {weights}")
+                criterion = nn.CrossEntropyLoss(weight=weights)
+        else:
+            criterion = nn.CrossEntropyLoss()
+
+    else:
+        if args.alpha is None:
+            criterion = FocalLoss(gamma=args.gamma, alpha=None)
+        else:
+            criterion = FocalLoss(
+                gamma=args.gamma, alpha=[args.alpha] * setup_args.number_of_classes
+            )
+
+    if args.optimizer == "sgd":
+        if args.scheduler == "clr":
+            optimizer = torch.optim.SGD(
+                model.parameters(), lr=1, momentum=0.9, weight_decay=0.00001
+            )
+        else:
+            optimizer = torch.optim.SGD(
+                model.parameters(), lr=args.learning_rate, momentum=0.9
+            )
+    elif args.optimizer == "adam":
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    else:
+        print("f'unrecognized optimizer {}".format(args.optimizer))
+        sys.exit()
+
+    if args.scheduler == "clr":
+        stepsize = int(args.stepsize * len(training_generator))
+        clr = utils.cyclical_lr(stepsize, args.min_lr, args.max_lr)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, [clr])
+    else:
+        scheduler = None
+
+    best_f1 = 0
+    best_epoch = 0
+
+    for epoch in range(args.epochs):
+        training_loss, training_accuracy, train_f1 = train(
+            model,
+            training_generator,
+            optimizer,
+            criterion,
+            epoch,
+            setup_args.writer,
+            setup_args.log_file,
+            scheduler,
+            setup_args.class_names,
+            args,
+            args.log_every,
+        )
+
+        validation_loss, validation_accuracy, validation_f1 = evaluate(
+            model,
+            validation_generator,
+            criterion,
+            epoch,
+            setup_args.writer,
+            setup_args.log_file,
+            args.log_every,
+        )
+
+        print(
+            "[Epoch: {} / {}]\ttrain_loss: {:.4f} \ttrain_acc: {:.4f} \tval_loss: {:.4f} \tval_acc: {:.4f}".format(
+                epoch + 1,
+                args.epochs,
+                training_loss,
+                training_accuracy,
+                validation_loss,
+                validation_accuracy,
+            )
+        )
+        print("=" * 50)
+
+        # learning rate scheduling
+
+        # leave learning rate constant
+        if args.scheduler == "step":
+            if args.optimizer == "sgd" and ((epoch + 1) % 3 == 0) and epoch > 0:
+                current_lr = optimizer.state_dict()["param_groups"][0]["lr"]
+                current_lr /= 2
+                print("Decreasing learning rate to {0}".format(current_lr))
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = current_lr
+
+        # model checkpoint
+        if validation_f1 > best_f1:
+            best_f1 = validation_f1
+            best_epoch = epoch
+            if args.checkpoint == 1:
+                torch.save(
+                    model.state_dict(),
+                    args.output
+                    + "model_{}_epoch_{}_maxlen_{}_lr_{}_loss_{}_acc_{}_f1_{}.pth".format(
+                        args.model_name,
+                        epoch,
+                        args.max_length,
+                        optimizer.state_dict()["param_groups"][0]["lr"],
+                        round(validation_loss, 4),
+                        round(validation_accuracy, 4),
+                        round(validation_f1, 4),
+                    ),
+                )
+
+        if bool(args.early_stopping):
+            if epoch - best_epoch > args.patience > 0:
+                print(
+                    "Stop training at epoch {}. The lowest loss achieved is {} at epoch {}".format(
+                        epoch, validation_loss, best_epoch
+                    )
+                )
+                break
+
+
+def run_setup():
+
     if args.flush_history == 1:
         objects = os.listdir(args.log_path)
         for f in objects:
@@ -229,235 +397,21 @@ def run(args, both_cases=False):
     class_names = sorted(list(set(labels)))
     class_names = [str(class_name) for class_name in class_names]
 
-    (
-        train_texts,
-        val_texts,
-        train_labels,
-        val_labels,
-        train_sample_weights,
-        _,
-    ) = train_test_split(
-        texts,
-        labels,
-        sample_weights,
-        test_size=args.validation_split,
-        random_state=42,
-        stratify=labels,
-    )
-    training_set = MyDataset(train_texts, train_labels, args)
-    validation_set = MyDataset(val_texts, val_labels, args)
-
-    if bool(args.use_sampler):
-        train_sample_weights = torch.from_numpy(train_sample_weights)
-        sampler = WeightedRandomSampler(
-            train_sample_weights.type("torch.DoubleTensor"), len(train_sample_weights)
-        )
-        training_params["sampler"] = sampler
-        training_params["shuffle"] = False
-
-    training_generator = DataLoader(training_set, **training_params)
-    validation_generator = DataLoader(validation_set, **validation_params)
-
-    model = SentenceCNN(args, number_of_classes)
-    if torch.cuda.is_available():
-        model.cuda()
-
-    if not bool(args.focal_loss):
-        if bool(args.class_weights):
-            class_counts = dict(Counter(train_labels))
-            m = max(class_counts.values())
-            for c in class_counts:
-                class_counts[c] = m / class_counts[c]
-            weights = []
-            for k in sorted(class_counts.keys()):
-                weights.append(class_counts[k])
-
-            weights = torch.Tensor(weights)
-            if torch.cuda.is_available():
-                weights = weights.cuda()
-                print(f"passing weights to CrossEntropyLoss : {weights}")
-                criterion = nn.CrossEntropyLoss(weight=weights)
-        else:
-            criterion = nn.CrossEntropyLoss()
-
-    else:
-        if args.alpha is None:
-            criterion = FocalLoss(gamma=args.gamma, alpha=None)
-        else:
-            criterion = FocalLoss(
-                gamma=args.gamma, alpha=[args.alpha] * number_of_classes
-            )
-
-    if args.optimizer == "sgd":
-        if args.scheduler == "clr":
-            optimizer = torch.optim.SGD(
-                model.parameters(), lr=1, momentum=0.9, weight_decay=0.00001
-            )
-        else:
-            optimizer = torch.optim.SGD(
-                model.parameters(), lr=args.learning_rate, momentum=0.9
-            )
-    elif args.optimizer == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-
-    best_f1 = 0
-    best_epoch = 0
-
-    if args.scheduler == "clr":
-        stepsize = int(args.stepsize * len(training_generator))
-        clr = utils.cyclical_lr(stepsize, args.min_lr, args.max_lr)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, [clr])
-    else:
-        scheduler = None
-
-    for epoch in range(args.epochs):
-        training_loss, training_accuracy, train_f1 = train(
-            model,
-            training_generator,
-            optimizer,
-            criterion,
-            epoch,
-            writer,
-            log_file,
-            scheduler,
-            class_names,
-            args,
-            args.log_every,
-        )
-
-        validation_loss, validation_accuracy, validation_f1 = evaluate(
-            model,
-            validation_generator,
-            criterion,
-            epoch,
-            writer,
-            log_file,
-            args.log_every,
-        )
-
-        print(
-            "[Epoch: {} / {}]\ttrain_loss: {:.4f} \ttrain_acc: {:.4f} \tval_loss: {:.4f} \tval_acc: {:.4f}".format(
-                epoch + 1,
-                args.epochs,
-                training_loss,
-                training_accuracy,
-                validation_loss,
-                validation_accuracy,
-            )
-        )
-        print("=" * 50)
-
-        # learning rate scheduling
-
-        # leave learning rate constant
-        if args.scheduler == "step":
-            if args.optimizer == "sgd" and ((epoch + 1) % 3 == 0) and epoch > 0:
-                current_lr = optimizer.state_dict()["param_groups"][0]["lr"]
-                current_lr /= 2
-                print("Decreasing learning rate to {0}".format(current_lr))
-                for param_group in optimizer.param_groups:
-                    param_group["lr"] = current_lr
-
-        # model checkpoint
-
-        if validation_f1 > best_f1:
-            best_f1 = validation_f1
-            best_epoch = epoch
-            if args.checkpoint == 1:
-                torch.save(
-                    model.state_dict(),
-                    args.output
-                    + "model_{}_epoch_{}_maxlen_{}_lr_{}_loss_{}_acc_{}_f1_{}.pth".format(
-                        args.model_name,
-                        epoch,
-                        args.max_length,
-                        optimizer.state_dict()["param_groups"][0]["lr"],
-                        round(validation_loss, 4),
-                        round(validation_accuracy, 4),
-                        round(validation_f1, 4),
-                    ),
-                )
-
-        if bool(args.early_stopping):
-            if epoch - best_epoch > args.patience > 0:
-                print(
-                    "Stop training at epoch {}. The lowest loss achieved is {} at epoch {}".format(
-                        epoch, validation_loss, best_epoch
-                    )
-                )
-                break
+    setup_args = SimpleNamespace(writer=writer,
+                                 log_file=log_file,
+                                 number_of_classes=number_of_classes,
+                                 class_names=class_names,
+                                 sample_weights=sample_weights,
+                                 texts=texts,
+                                 labels=labels,
+                                 training_params=training_params,
+                                 validation_params=validation_params)
+    return setup_args
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Character Based CNN for text classification")
-    parser.add_argument("--data_path", type=str, default="archimob_sentences_deduplicated.csv")
-    parser.add_argument("--validation_split", type=float, default=0.2)
-    parser.add_argument("--label_column", type=str, default="dialect_norm")
-    parser.add_argument("--text_column", type=str, default="sentence")
-    parser.add_argument("--max_rows", type=int, default=None)
-    parser.add_argument("--chunksize", type=int, default=50000)
-    parser.add_argument("--encoding", type=str, default="utf-8")
-    parser.add_argument("--sep", type=str, default=",")
-    parser.add_argument("--steps", nargs="+", default=["lower"])
-    # parser.add_argument("--group_labels", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--group_labels", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--ignore_center", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ', "DE"])
-    parser.add_argument("--ratio", type=float, default=1)
-    parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
 
-    # parser.add_argument(
-    #     "--alphabet",
-    #     type=str,
-    #     default="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\/\|_@#$%^&*~`+-=<>()[]{}",
-    # )
-
-    """
-    parser.add_argument(
-        "--alphabet",
-        type=str,
-        default=SWISS_GERMAN_ARCHIMOB_ALPHABET,
-    )
-    """
-
-    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial'])
-    # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
-    # parser.add_argument("--number_of_characters", type=int, default=NUM_SG_CHARS)
-    # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
-    parser.add_argument("--extra_characters", type=str, default="")
-    parser.add_argument("--max_length", type=int, default=150)
-    parser.add_argument("--dropout_input", type=float, default=0.1)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch_size", type=int, default=128)  # was 128
-    parser.add_argument("--optimizer", type=str, choices=["adam", "sgd"], default="sgd")
-    parser.add_argument("--learning_rate", type=float, default=0.01)
-    parser.add_argument("--class_weights", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--focal_loss", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--gamma", type=float, default=2)
-    parser.add_argument("--alpha", type=float, default=None)
-
-    parser.add_argument(
-        "--scheduler", type=str, default="none", choices=["clr", "step", "none"]
-    )
-    # parser.add_argument("--min_lr", type=float, default=1.7e-3)
-    parser.add_argument("--min_lr", type=float, default=2e-3)
-    parser.add_argument("--max_lr", type=float, default=2e-2)
-    # parser.add_argument("--max_lr", type=float, default=1e-2)
-    parser.add_argument("--stepsize", type=float, default=4)
-    parser.add_argument("--patience", type=int, default=3)
-    parser.add_argument("--early_stopping", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--checkpoint", type=int, choices=[0, 1], default=1)
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--log_path", type=str, default="./logs/")
-    parser.add_argument("--log_every", type=int, default=100)
-    parser.add_argument("--log_f1", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--flush_history", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--output", type=str, default="./models/")
-    parser.add_argument("--model_name", type=str, default="test_model")
-    parser.add_argument("--embeddings", action="store_true", help="flag to extract embeddings")
-
-    args = parser.parse_args()
+    args = read_cli_arguments()
 
     if args.input_alphabet == 'swissdial':
         setattr(args, 'alphabet', SWISS_GERMAN_SWISSDIAL_ALPHABET)
@@ -472,4 +426,8 @@ if __name__ == "__main__":
     os.makedirs(args.log_path, exist_ok=True)
     os.makedirs(args.output, exist_ok=True)
 
-    run(args)
+    # prepare arguments common to all runs
+    setup_args = run_setup()
+
+    # run one split
+    run(args, setup_args)
