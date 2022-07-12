@@ -197,46 +197,15 @@ def evaluate(
     return losses.avg.item(), accuracies.avg.item(), f1_test
 
 
-def run(args, setup_args):
+def run(args, dataloader_args, writer, log_file):
 
-    (
-        train_texts,
-        val_texts,
-        train_labels,
-        val_labels,
-        train_sample_weights,
-        _,
-    ) = train_test_split(
-        setup_args.texts,
-        setup_args.labels,
-        setup_args.sample_weights,
-        test_size=args.validation_split,
-        random_state=42,
-        stratify=setup_args.labels,
-    )
-
-
-    if bool(args.use_sampler):
-        train_sample_weights = torch.from_numpy(train_sample_weights)
-        sampler = WeightedRandomSampler(
-            train_sample_weights.type("torch.DoubleTensor"), len(train_sample_weights)
-        )
-        setup_args.training_params["sampler"] = sampler
-        setup_args.training_params["shuffle"] = False
-
-    training_set = MyDataset(train_texts, train_labels, args)
-    validation_set = MyDataset(val_texts, val_labels, args)
-
-    training_generator = DataLoader(training_set, **setup_args.training_params)
-    validation_generator = DataLoader(validation_set, **setup_args.validation_params)
-
-    model = SentenceCNN(args, setup_args.number_of_classes)
+    model = SentenceCNN(args, dataloader_args.number_of_classes)
     if torch.cuda.is_available():
         model.cuda()
 
     if not bool(args.focal_loss):
         if bool(args.class_weights):
-            class_counts = dict(Counter(train_labels))
+            class_counts = dict(Counter(dataloader_args.training_generator.dataset.labels))
             m = max(class_counts.values())
             for c in class_counts:
                 class_counts[c] = m / class_counts[c]
@@ -257,7 +226,7 @@ def run(args, setup_args):
             criterion = FocalLoss(gamma=args.gamma, alpha=None)
         else:
             criterion = FocalLoss(
-                gamma=args.gamma, alpha=[args.alpha] * setup_args.number_of_classes
+                gamma=args.gamma, alpha=[args.alpha] * dataloader_args.number_of_classes
             )
 
     if args.optimizer == "sgd":
@@ -276,7 +245,7 @@ def run(args, setup_args):
         sys.exit()
 
     if args.scheduler == "clr":
-        stepsize = int(args.stepsize * len(training_generator))
+        stepsize = int(args.stepsize * len(dataloader_args.training_generator))
         clr = utils.cyclical_lr(stepsize, args.min_lr, args.max_lr)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, [clr])
     else:
@@ -288,25 +257,25 @@ def run(args, setup_args):
     for epoch in range(args.epochs):
         training_loss, training_accuracy, train_f1 = train(
             model,
-            training_generator,
+            dataloader_args.training_generator,
             optimizer,
             criterion,
             epoch,
-            setup_args.writer,
-            setup_args.log_file,
+            writer,
+            log_file,
             scheduler,
-            setup_args.class_names,
+            dataloader_args.class_names,
             args,
             args.log_every,
         )
 
         validation_loss, validation_accuracy, validation_f1 = evaluate(
             model,
-            validation_generator,
+            dataloader_args.validation_generator,
             criterion,
             epoch,
-            setup_args.writer,
-            setup_args.log_file,
+            writer,
+            log_file,
             args.log_every,
         )
 
@@ -336,21 +305,20 @@ def run(args, setup_args):
         # model checkpoint
         if validation_f1 > best_f1:
             best_f1 = validation_f1
+            best_loss = validation_loss
+            best_acc = validation_accuracy
             best_epoch = epoch
             if args.checkpoint == 1:
-                torch.save(
-                    model.state_dict(),
-                    args.output
-                    + "model_{}_epoch_{}_maxlen_{}_lr_{}_loss_{}_acc_{}_f1_{}.pth".format(
-                        args.model_name,
-                        epoch,
-                        args.max_length,
-                        optimizer.state_dict()["param_groups"][0]["lr"],
-                        round(validation_loss, 4),
-                        round(validation_accuracy, 4),
-                        round(validation_f1, 4),
-                    ),
-                )
+                checkpoint_filename = "model_{}_kfold{}_epoch_{}_maxlen_{}_lr_{}_loss_{}_acc_{}_f1_{}.pth".format(
+                                        args.model_name,
+                                        dataloader_args.kfold,
+                                        epoch,
+                                        args.max_length,
+                                        optimizer.state_dict()["param_groups"][0]["lr"],
+                                        round(validation_loss, 4),
+                                        round(validation_accuracy, 4),
+                                        round(validation_f1, 4))
+                torch.save(model.state_dict(), os.path.join(args.output, checkpoint_filename))
 
         if bool(args.early_stopping):
             if epoch - best_epoch > args.patience > 0:
@@ -361,51 +329,68 @@ def run(args, setup_args):
                 )
                 break
 
+    return best_f1, best_loss, best_acc, best_epoch
 
-def run_setup():
 
-    if args.flush_history == 1:
-        objects = os.listdir(args.log_path)
-        for f in objects:
-            if os.path.isdir(args.log_path + f):
-                shutil.rmtree(args.log_path + f)
+def load_data_setup(args):
 
-    now = datetime.now()
-    logdir = args.log_path + now.strftime("%Y%m%d-%H%M%S") + "/"
-    os.makedirs(logdir)
-    log_file = logdir + "log.txt"
-    writer = SummaryWriter(logdir)
-
-    batch_size = args.batch_size
-
-    training_params = {
-        "batch_size": batch_size,
-        "shuffle": True,
-        "num_workers": args.workers,
-        "drop_last": True,
-    }
-
-    validation_params = {
-        "batch_size": batch_size,
-        "shuffle": False,
-        "num_workers": args.workers,
-        "drop_last": True,
-    }
-
+    # load data
     texts, labels, number_of_classes, sample_weights = load_data(args)
 
     class_names = sorted(list(set(labels)))
     class_names = [str(class_name) for class_name in class_names]
 
-    setup_args = SimpleNamespace(writer=writer,
-                                 log_file=log_file,
+    # split data
+    (
+        train_texts,
+        val_texts,
+        train_labels,
+        val_labels,
+        train_sample_weights,
+        _,
+    ) = train_test_split(
+        texts,
+        labels,
+        sample_weights,
+        test_size=args.validation_split,
+        random_state=42,
+        stratify=labels,
+    )
+
+    training_set = MyDataset(train_texts, train_labels, args)
+    validation_set = MyDataset(val_texts, val_labels, args)
+
+    # set up train/val parameters for DataLoader
+    training_params = {
+        "batch_size": args.batch_size,
+        "shuffle": True,
+        "num_workers": args.workers,
+        "drop_last": bool(args.drop_last),
+    }
+
+    validation_params = {
+        "batch_size": args.batch_size,
+        "shuffle": False,
+        "num_workers": args.workers,
+        "drop_last": bool(args.drop_last),
+    }
+
+    if bool(args.use_sampler):
+        train_sample_weights = torch.from_numpy(train_sample_weights)
+        sampler = WeightedRandomSampler(
+            train_sample_weights.type("torch.DoubleTensor"), len(train_sample_weights)
+        )
+        training_params["sampler"] = sampler
+        training_params["shuffle"] = False
+
+    training_generator = DataLoader(training_set, **training_params)
+    validation_generator = DataLoader(validation_set, **validation_params)
+
+    setup_args = SimpleNamespace(kfold='',
                                  number_of_classes=number_of_classes,
                                  class_names=class_names,
-                                 sample_weights=sample_weights,
-                                 texts=texts,
-                                 labels=labels,
-                                 training_params=training_params,
-                                 validation_params=validation_params)
+                                 training_generator=training_generator,
+                                 validation_generator=validation_generator)
     return setup_args
 
 
@@ -426,8 +411,21 @@ if __name__ == "__main__":
     os.makedirs(args.log_path, exist_ok=True)
     os.makedirs(args.output, exist_ok=True)
 
-    # prepare arguments common to all runs
-    setup_args = run_setup()
+    # set log file
+    if args.flush_history == 1:
+        objects = os.listdir(args.log_path)
+        for f in objects:
+            if os.path.isdir(args.log_path + f):
+                shutil.rmtree(args.log_path + f)
+
+    now = datetime.now()
+    logdir = args.log_path + now.strftime("%Y%m%d-%H%M%S") + "/"
+    os.makedirs(logdir)
+    log_file = logdir + "log.txt"
+    writer = SummaryWriter(logdir)
+
+    # prepare arguments common to all runs and load data
+    loaddata_args = load_data_setup(args)
 
     # run one split
-    run(args, setup_args)
+    run(args, loaddata_args, writer, log_file)

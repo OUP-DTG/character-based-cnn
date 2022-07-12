@@ -52,6 +52,7 @@ def read_cli_arguments():
     parser.add_argument("--focal_loss", type=int, default=0, choices=[0, 1])
     parser.add_argument("--gamma", type=float, default=2)
     parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--drop_last", type=int, default=1, choices=[0, 1])
 
     parser.add_argument(
         "--scheduler", type=str, default="none", choices=["clr", "step", "none"]
@@ -72,6 +73,7 @@ def read_cli_arguments():
     parser.add_argument("--output", type=str, default="./models/")
     parser.add_argument("--model_name", type=str, default="test_model")
     parser.add_argument("--embeddings", action="store_true", help="flag to extract embeddings")
+    parser.add_argument("--kfolds", type=int)
 
     args = parser.parse_args()
 
