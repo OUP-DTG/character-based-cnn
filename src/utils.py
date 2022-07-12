@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import math
-import json
 import re
 import numpy as np
 from sklearn import metrics
@@ -27,7 +26,7 @@ def remove_urls(text):
     return clean_text
 
 
-preprocessing_setps = {
+preprocessing_steps = {
     "remove_hashtags": remove_hashtags,
     "remove_urls": remove_urls,
     "remove_user_mentions": remove_user_mentions,
@@ -38,7 +37,7 @@ preprocessing_setps = {
 def process_text(steps, text):
     if steps is not None:
         for step in steps:
-            text = preprocessing_setps[step](text)
+            text = preprocessing_steps[step](text)
     return text
 
 
@@ -98,7 +97,7 @@ def preprocess_input(args):
     raw_text = args.text
     steps = args.steps
     for step in steps:
-        raw_text = preprocessing_setps[step](raw_text)
+        raw_text = preprocessing_steps[step](raw_text)
 
     number_of_characters = args.number_of_characters + len(args.extra_characters)
     identity_mat = np.identity(number_of_characters)
