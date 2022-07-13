@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 import sys
 import shutil
-import argparse
+import os
+
+from types import SimpleNamespace
 from datetime import datetime
 from collections import Counter
 
@@ -20,8 +22,8 @@ from src.data_loader import MyDataset, load_data
 from src import utils
 from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET
 from src.focal_loss import FocalLoss
-import os
 
+from cli_arguments import read_cli_arguments
 
 def train(
         model,
@@ -195,76 +197,15 @@ def evaluate(
     return losses.avg.item(), accuracies.avg.item(), f1_test
 
 
-def run(args, both_cases=False):
-    if args.flush_history == 1:
-        objects = os.listdir(args.log_path)
-        for f in objects:
-            if os.path.isdir(args.log_path + f):
-                shutil.rmtree(args.log_path + f)
+def run(args, dataloader_args, writer, log_file):
 
-    now = datetime.now()
-    logdir = args.log_path + now.strftime("%Y%m%d-%H%M%S") + "/"
-    os.makedirs(logdir)
-    log_file = logdir + "log.txt"
-    writer = SummaryWriter(logdir)
-
-    batch_size = args.batch_size
-
-    training_params = {
-        "batch_size": batch_size,
-        "shuffle": True,
-        "num_workers": args.workers,
-        "drop_last": True,
-    }
-
-    validation_params = {
-        "batch_size": batch_size,
-        "shuffle": False,
-        "num_workers": args.workers,
-        "drop_last": True,
-    }
-
-    texts, labels, number_of_classes, sample_weights = load_data(args)
-
-    class_names = sorted(list(set(labels)))
-    class_names = [str(class_name) for class_name in class_names]
-
-    (
-        train_texts,
-        val_texts,
-        train_labels,
-        val_labels,
-        train_sample_weights,
-        _,
-    ) = train_test_split(
-        texts,
-        labels,
-        sample_weights,
-        test_size=args.validation_split,
-        random_state=42,
-        stratify=labels,
-    )
-    training_set = MyDataset(train_texts, train_labels, args)
-    validation_set = MyDataset(val_texts, val_labels, args)
-
-    if bool(args.use_sampler):
-        train_sample_weights = torch.from_numpy(train_sample_weights)
-        sampler = WeightedRandomSampler(
-            train_sample_weights.type("torch.DoubleTensor"), len(train_sample_weights)
-        )
-        training_params["sampler"] = sampler
-        training_params["shuffle"] = False
-
-    training_generator = DataLoader(training_set, **training_params)
-    validation_generator = DataLoader(validation_set, **validation_params)
-
-    model = SentenceCNN(args, number_of_classes)
+    model = SentenceCNN(args, dataloader_args.number_of_classes)
     if torch.cuda.is_available():
         model.cuda()
 
     if not bool(args.focal_loss):
         if bool(args.class_weights):
-            class_counts = dict(Counter(train_labels))
+            class_counts = dict(Counter(dataloader_args.training_generator.dataset.labels))
             m = max(class_counts.values())
             for c in class_counts:
                 class_counts[c] = m / class_counts[c]
@@ -285,7 +226,7 @@ def run(args, both_cases=False):
             criterion = FocalLoss(gamma=args.gamma, alpha=None)
         else:
             criterion = FocalLoss(
-                gamma=args.gamma, alpha=[args.alpha] * number_of_classes
+                gamma=args.gamma, alpha=[args.alpha] * dataloader_args.number_of_classes
             )
 
     if args.optimizer == "sgd":
@@ -299,35 +240,38 @@ def run(args, both_cases=False):
             )
     elif args.optimizer == "adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-
-    best_f1 = 0
-    best_epoch = 0
+    else:
+        print("f'unrecognized optimizer {}".format(args.optimizer))
+        sys.exit()
 
     if args.scheduler == "clr":
-        stepsize = int(args.stepsize * len(training_generator))
+        stepsize = int(args.stepsize * len(dataloader_args.training_generator))
         clr = utils.cyclical_lr(stepsize, args.min_lr, args.max_lr)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, [clr])
     else:
         scheduler = None
 
+    best_f1 = 0
+    best_epoch = 0
+
     for epoch in range(args.epochs):
         training_loss, training_accuracy, train_f1 = train(
             model,
-            training_generator,
+            dataloader_args.training_generator,
             optimizer,
             criterion,
             epoch,
             writer,
             log_file,
             scheduler,
-            class_names,
+            dataloader_args.class_names,
             args,
             args.log_every,
         )
 
         validation_loss, validation_accuracy, validation_f1 = evaluate(
             model,
-            validation_generator,
+            dataloader_args.validation_generator,
             criterion,
             epoch,
             writer,
@@ -359,24 +303,22 @@ def run(args, both_cases=False):
                     param_group["lr"] = current_lr
 
         # model checkpoint
-
         if validation_f1 > best_f1:
             best_f1 = validation_f1
+            best_loss = validation_loss
+            best_acc = validation_accuracy
             best_epoch = epoch
             if args.checkpoint == 1:
-                torch.save(
-                    model.state_dict(),
-                    args.output
-                    + "model_{}_epoch_{}_maxlen_{}_lr_{}_loss_{}_acc_{}_f1_{}.pth".format(
-                        args.model_name,
-                        epoch,
-                        args.max_length,
-                        optimizer.state_dict()["param_groups"][0]["lr"],
-                        round(validation_loss, 4),
-                        round(validation_accuracy, 4),
-                        round(validation_f1, 4),
-                    ),
-                )
+                checkpoint_filename = "model_{}_kfold{}_epoch_{}_maxlen_{}_lr_{}_loss_{}_acc_{}_f1_{}.pth".format(
+                                        args.model_name,
+                                        dataloader_args.kfold,
+                                        epoch,
+                                        args.max_length,
+                                        optimizer.state_dict()["param_groups"][0]["lr"],
+                                        round(validation_loss, 4),
+                                        round(validation_accuracy, 4),
+                                        round(validation_f1, 4))
+                torch.save(model.state_dict(), os.path.join(args.output, checkpoint_filename))
 
         if bool(args.early_stopping):
             if epoch - best_epoch > args.patience > 0:
@@ -387,77 +329,74 @@ def run(args, both_cases=False):
                 )
                 break
 
+    return best_f1, best_loss, best_acc, best_epoch
+
+
+def load_data_setup(args):
+
+    # load data
+    texts, labels, number_of_classes, sample_weights = load_data(args)
+
+    class_names = sorted(list(set(labels)))
+    class_names = [str(class_name) for class_name in class_names]
+
+    # split data
+    (
+        train_texts,
+        val_texts,
+        train_labels,
+        val_labels,
+        train_sample_weights,
+        _,
+    ) = train_test_split(
+        texts,
+        labels,
+        sample_weights,
+        test_size=args.validation_split,
+        random_state=42,
+        stratify=labels,
+    )
+
+    training_set = MyDataset(train_texts, train_labels, args)
+    validation_set = MyDataset(val_texts, val_labels, args)
+
+    # set up train/val parameters for DataLoader
+    training_params = {
+        "batch_size": args.batch_size,
+        "shuffle": True,
+        "num_workers": args.workers,
+        "drop_last": bool(args.drop_last),
+    }
+
+    validation_params = {
+        "batch_size": args.batch_size,
+        "shuffle": False,
+        "num_workers": args.workers,
+        "drop_last": bool(args.drop_last),
+    }
+
+    if bool(args.use_sampler):
+        train_sample_weights = torch.from_numpy(train_sample_weights)
+        sampler = WeightedRandomSampler(
+            train_sample_weights.type("torch.DoubleTensor"), len(train_sample_weights)
+        )
+        training_params["sampler"] = sampler
+        training_params["shuffle"] = False
+
+    training_generator = DataLoader(training_set, **training_params)
+    validation_generator = DataLoader(validation_set, **validation_params)
+
+    setup_args = SimpleNamespace(kfold='',
+                                 number_of_classes=number_of_classes,
+                                 class_names=class_names,
+                                 training_generator=training_generator,
+                                 validation_generator=validation_generator)
+    return setup_args
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Character Based CNN for text classification")
-    parser.add_argument("--data_path", type=str, default="archimob_sentences_deduplicated.csv")
-    parser.add_argument("--validation_split", type=float, default=0.2)
-    parser.add_argument("--label_column", type=str, default="dialect_norm")
-    parser.add_argument("--text_column", type=str, default="sentence")
-    parser.add_argument("--max_rows", type=int, default=None)
-    parser.add_argument("--chunksize", type=int, default=50000)
-    parser.add_argument("--encoding", type=str, default="utf-8")
-    parser.add_argument("--sep", type=str, default=",")
-    parser.add_argument("--steps", nargs="+", default=["lower"])
-    # parser.add_argument("--group_labels", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--group_labels", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--ignore_center", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ', "DE"])
-    parser.add_argument("--ratio", type=float, default=1)
-    parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
 
-    # parser.add_argument(
-    #     "--alphabet",
-    #     type=str,
-    #     default="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\/\|_@#$%^&*~`+-=<>()[]{}",
-    # )
-
-    """
-    parser.add_argument(
-        "--alphabet",
-        type=str,
-        default=SWISS_GERMAN_ARCHIMOB_ALPHABET,
-    )
-    """
-
-    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial'])
-    # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
-    # parser.add_argument("--number_of_characters", type=int, default=NUM_SG_CHARS)
-    # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
-    parser.add_argument("--extra_characters", type=str, default="")
-    parser.add_argument("--max_length", type=int, default=150)
-    parser.add_argument("--dropout_input", type=float, default=0.1)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch_size", type=int, default=128)  # was 128
-    parser.add_argument("--optimizer", type=str, choices=["adam", "sgd"], default="sgd")
-    parser.add_argument("--learning_rate", type=float, default=0.01)
-    parser.add_argument("--class_weights", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--focal_loss", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--gamma", type=float, default=2)
-    parser.add_argument("--alpha", type=float, default=None)
-
-    parser.add_argument(
-        "--scheduler", type=str, default="none", choices=["clr", "step", "none"]
-    )
-    # parser.add_argument("--min_lr", type=float, default=1.7e-3)
-    parser.add_argument("--min_lr", type=float, default=2e-3)
-    parser.add_argument("--max_lr", type=float, default=2e-2)
-    # parser.add_argument("--max_lr", type=float, default=1e-2)
-    parser.add_argument("--stepsize", type=float, default=4)
-    parser.add_argument("--patience", type=int, default=3)
-    parser.add_argument("--early_stopping", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--checkpoint", type=int, choices=[0, 1], default=1)
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--log_path", type=str, default="./logs/")
-    parser.add_argument("--log_every", type=int, default=100)
-    parser.add_argument("--log_f1", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--flush_history", type=int, default=1, choices=[0, 1])
-    parser.add_argument("--output", type=str, default="./models/")
-    parser.add_argument("--model_name", type=str, default="test_model")
-    parser.add_argument("--embeddings", action="store_true", help="flag to extract embeddings")
-
-    args = parser.parse_args()
+    args = read_cli_arguments()
 
     if args.input_alphabet == 'swissdial':
         setattr(args, 'alphabet', SWISS_GERMAN_SWISSDIAL_ALPHABET)
@@ -472,4 +411,21 @@ if __name__ == "__main__":
     os.makedirs(args.log_path, exist_ok=True)
     os.makedirs(args.output, exist_ok=True)
 
-    run(args)
+    # set log file
+    if args.flush_history == 1:
+        objects = os.listdir(args.log_path)
+        for f in objects:
+            if os.path.isdir(args.log_path + f):
+                shutil.rmtree(args.log_path + f)
+
+    now = datetime.now()
+    logdir = args.log_path + now.strftime("%Y%m%d-%H%M%S") + "/"
+    os.makedirs(logdir)
+    log_file = logdir + "log.txt"
+    writer = SummaryWriter(logdir)
+
+    # prepare arguments common to all runs and load data
+    loaddata_args = load_data_setup(args)
+
+    # run one split
+    run(args, loaddata_args, writer, log_file)

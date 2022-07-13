@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 This script allows to find the optimal parameters for a learning rate scheduling:
 
@@ -21,56 +23,23 @@ One heuristic to find the optimal parameters:
 reference: https://towardsdatascience.com/adaptive-and-cyclical-learning-rates-using-pytorch-2bf904d18dee
 
 """
-
+import sys
 import math
-import os
-import shutil
-import json
 import argparse
-import time
-from datetime import datetime
-from collections import Counter
 
 from tqdm import tqdm
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
-from sklearn.model_selection import train_test_split
-
-from src.data_loader import MyDataset, load_data
-from src import utils
-from src.model import CharacterLevelCNN
+from src.sentence_model import SentenceCNN
+from train import load_data_setup, SWISS_GERMAN_SWISSDIAL_ALPHABET, SWISS_GERMAN_ARCHIMOB_ALPHABET
 
 from matplotlib import pyplot as plt
 
 
-def run(args):
+def run(args, dataloader_args):
 
-    batch_size = args.batch_size
-
-    training_params = {
-        "batch_size": batch_size,
-        "shuffle": True,
-        "num_workers": args.workers,
-    }
-
-    texts, labels, number_of_classes, sample_weights = load_data(args)
-    train_texts, _, train_labels, _, _, _ = train_test_split(
-        texts,
-        labels,
-        sample_weights,
-        test_size=args.validation_split,
-        random_state=42,
-        stratify=labels,
-    )
-
-    training_set = MyDataset(train_texts, train_labels, args)
-    training_generator = DataLoader(training_set, **training_params)
-    model = CharacterLevelCNN(args, number_of_classes)
-
+    model = SentenceCNN(args, dataloader_args.number_of_classes)
     if torch.cuda.is_available():
         model.cuda()
 
@@ -90,7 +59,7 @@ def run(args):
 
     def lr_lambda(x):
         return math.exp(
-            x * math.log(end_lr / start_lr) / (lr_find_epochs * len(training_generator))
+            x * math.log(end_lr / start_lr) / (lr_find_epochs * len(dataloader_args.training_generator))
         )
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
@@ -101,7 +70,7 @@ def run(args):
     for epoch in range(lr_find_epochs):
         print(f"[epoch {epoch + 1} / {lr_find_epochs}]")
         progress_bar = tqdm(
-            enumerate(training_generator), total=len(training_generator)
+            enumerate(dataloader_args.training_generator), total=len(dataloader_args.training_generator)
         )
         for iter, batch in progress_bar:
             features, labels = batch
@@ -128,42 +97,64 @@ def run(args):
                 losses.append(loss)
 
     plt.semilogx(learning_rates, losses)
-    plt.savefig("./plots/losses_vs_lr.png")
+    plt.savefig("./plots/{}_losses_vs_lr.png".format(args.model_name))
 
 
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser("Character Based CNN for text classification")
-    parser.add_argument("--data_path", type=str, default="./data/train.csv")
+    parser.add_argument("--model_name", type=str, default="test_model")
+    parser.add_argument("--data_path", type=str, default="archimob_sentences_deduplicated.csv")
     parser.add_argument("--validation_split", type=float, default=0.2)
-    parser.add_argument("--label_column", type=str, default="Sentiment")
-    parser.add_argument("--text_column", type=str, default="SentimentText")
+    parser.add_argument("--label_column", type=str, default="dialect_norm")
+    parser.add_argument("--text_column", type=str, default="sentence")
     parser.add_argument("--max_rows", type=int, default=None)
     parser.add_argument("--chunksize", type=int, default=50000)
     parser.add_argument("--encoding", type=str, default="utf-8")
     parser.add_argument("--sep", type=str, default=",")
     parser.add_argument("--steps", nargs="+", default=["lower"])
-    parser.add_argument(
-        "--group_labels", type=str, default=None, choices=[None, "binarize"]
-    )
     parser.add_argument("--ratio", type=float, default=1)
-
+    """
     parser.add_argument(
         "--alphabet",
         type=str,
         default="abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"\\/|_@#$%^&*~`+-=<>()[]{}",
     )
-    parser.add_argument("--number_of_characters", type=int, default=69)
+    """
+    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial'])
+    #parser.add_argument("--number_of_characters", type=int, default=69)
     parser.add_argument("--extra_characters", type=str, default="")
     parser.add_argument("--max_length", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--optimizer", type=str, choices=["adam", "sgd"], default="sgd")
     parser.add_argument("--learning_rate", type=float, default=0.01)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--drop_last", type=int, default=0, choices=[0, 1])
+    parser.add_argument("--group_labels", type=int, default=1, choices=[0, 1])
+    parser.add_argument("--ignore_center", type=int, default=0, choices=[0, 1])
+    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ', "DE"])
+    parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
+    parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
+    parser.add_argument("--embeddings", type=bool, default=False)
 
-    parser.add_argument("--start_lr", type=float, default=1e-5)
-    parser.add_argument("--end_lr", type=float, default=1e-2)
+    parser.add_argument("--start_lr", type=float, default=1e-3)
+    parser.add_argument("--end_lr", type=float, default=2e-2)
     parser.add_argument("--smoothing", type=float, default=0.05)
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=10)
 
     args = parser.parse_args()
-    run(args)
+
+    if args.input_alphabet == 'swissdial':
+        setattr(args, 'alphabet', SWISS_GERMAN_SWISSDIAL_ALPHABET)
+        setattr(args, 'number_of_characters', len(SWISS_GERMAN_SWISSDIAL_ALPHABET))
+    elif args.input_alphabet == 'archimob':
+        setattr(args, 'alphabet', SWISS_GERMAN_ARCHIMOB_ALPHABET)
+        setattr(args, 'number_of_characters', len(SWISS_GERMAN_ARCHIMOB_ALPHABET))
+    else:
+        print("Wrong input alphabet value. Valid values are 'archimob' or 'swissdial'")
+        sys.exit()
+
+    # prepare arguments common to all runs and load data
+    loaddata_args = load_data_setup(args)
+
+    run(args, loaddata_args)
