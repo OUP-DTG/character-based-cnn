@@ -1,10 +1,28 @@
 import argparse
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 from src.model import CharacterLevelCNN
-from src import utils
+from src.utils import preprocessing_steps, encode_string
 
 use_cuda = torch.cuda.is_available()
+
+
+def preprocess_input(args):
+    raw_text = args.text
+    steps = args.steps
+    for step in steps:
+        raw_text = preprocessing_steps[step](raw_text)
+
+    number_of_characters = args.number_of_characters + len(args.extra_characters)
+    identity_mat = np.identity(number_of_characters)
+    vocabulary = list(args.alphabet) + list(args.extra_characters)
+    max_length = args.max_length
+
+    processed_output = encode_string(raw_text, number_of_characters, identity_mat, vocabulary, max_length)
+
+    return processed_output
 
 
 def predict(args):
@@ -13,7 +31,7 @@ def predict(args):
     model.load_state_dict(state)
     model.eval()
 
-    processed_input = utils.preprocess_input(args)
+    processed_input = preprocess_input(args)
     processed_input = torch.tensor(processed_input)
     processed_input = processed_input.unsqueeze(0)
     if use_cuda:
@@ -49,3 +67,4 @@ if __name__ == "__main__":
 
     print("input : {}".format(args.text))
     print("prediction : {}".format(prediction))
+

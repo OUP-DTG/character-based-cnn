@@ -90,47 +90,6 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
-# preprocess input for prediction
-
-
-def preprocess_input(args):
-    raw_text = args.text
-    steps = args.steps
-    for step in steps:
-        raw_text = preprocessing_steps[step](raw_text)
-
-    number_of_characters = args.number_of_characters + len(args.extra_characters)
-    identity_mat = np.identity(number_of_characters)
-    vocabulary = list(args.alphabet) + list(args.extra_characters)
-    max_length = args.max_length
-
-    processed_output = np.array(
-        [
-            identity_mat[vocabulary.index(i)]
-            for i in list(raw_text[::-1])
-            if i in vocabulary
-        ],
-        dtype=np.float32,
-    )
-    if len(processed_output) > max_length:
-        processed_output = processed_output[:max_length]
-    elif 0 < len(processed_output) < max_length:
-        processed_output = np.concatenate(
-            (
-                processed_output,
-                np.zeros(
-                    (max_length - len(processed_output), number_of_characters),
-                    dtype=np.float32,
-                ),
-            )
-        )
-    elif len(processed_output) == 0:
-        processed_output = np.zeros(
-            (max_length, number_of_characters), dtype=np.float32
-        )
-    return processed_output
-
-
 # cyclic learning rate scheduling
 
 
@@ -151,3 +110,35 @@ def cyclical_lr(stepsize, min_lr=1.7e-3, max_lr=1e-2):
         return max(0, (1 - x)) * scaler(cycle)
 
     return lr_lambda
+
+
+# encode for prediction
+
+
+def encode_string(_str, _number_of_characters, _identity_mat, _vocabulary, _max_length):
+    processed_output = np.array(
+        [
+            _identity_mat[_vocabulary.index(i)]
+            for i in list(_str[::-1])
+            if i in _vocabulary
+        ],
+        dtype=np.float32,
+    )
+
+    if len(processed_output) > _max_length:
+        processed_output = processed_output[:_max_length]
+    elif 0 < len(processed_output) < _max_length:
+        processed_output = np.concatenate(
+            (
+                processed_output,
+                np.zeros(
+                    (_max_length - len(processed_output), _number_of_characters),
+                    dtype=np.float32,
+                ),
+            )
+        )
+    elif len(processed_output) == 0:
+        processed_output = np.zeros(
+            (_max_length, _number_of_characters), dtype=np.float32
+        )
+    return processed_output
