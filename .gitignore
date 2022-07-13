@@ -5,3 +5,7 @@ src/__pycache__/
 .vscode/
 logs/
 models/
+venv/
+venv2/
+__pycache__/
+.idea/
