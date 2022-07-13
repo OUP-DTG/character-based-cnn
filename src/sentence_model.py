@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Models for processing input sentences.
 
 Notation:
@@ -11,6 +12,19 @@ Notation:
 import torch
 import torch.nn as nn
 from torch.nn.functional import pad
+
+SWISS_GERMAN_ARCHIMOB_ALPHABET = "() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ"
+SWISS_GERMAN_SWISSDIAL_ALPHABET = "0123456789ABDEGHLRSUVZ_ abcdefghijklmnopqrstuvwxyzßàáâãäçèéêëíïñòóôöøüě"
+
+
+def reset_weights(m):
+    """
+    Try resetting model weights to avoid weight leakage.
+    """
+    for layer in m.children():
+        if hasattr(layer, 'reset_parameters'):
+            print(f'Reset trainable parameters of layer = {layer}')
+            layer.reset_parameters()
 
 
 class SimpleModel(nn.Module):
@@ -54,6 +68,8 @@ def get_conv_layer(vocab_size: int, kernel_size: int, output_channels):
             padding=0,
             stride=1,
         ),
+        #nn.Tanh(),
+        #nn.Softmax(),
         nn.ReLU(),
         nn.MaxPool1d(3),
     )
@@ -62,6 +78,8 @@ def get_conv_layer(vocab_size: int, kernel_size: int, output_channels):
 class SentenceCNN(nn.Module):
     def __init__(self, args, number_of_classes):
         super().__init__()
+
+        self.embeddings = args.embeddings
 
         convolution_channels = 128  # i.e. C = 128
         # I see no better results from using all 5, and it is slower.
@@ -75,6 +93,7 @@ class SentenceCNN(nn.Module):
 
         # Length reduced by a factor of 3 by MaxPool1d layer.
         self.max_conv_length = (args.max_length - 1) // 3
+        #self.max_conv_length = args.max_length - 1
         convolution_output_size = convolution_channels * self.conv_layers_to_use
         fc_input_size = convolution_output_size * self.max_conv_length
 
@@ -93,6 +112,7 @@ class SentenceCNN(nn.Module):
                 module.weight.data.normal_(mean, std)
 
     def forward(self, x):
+
         # x is a tensor of shape (B, L, V)
         x = x.transpose(1, 2)  # (B, V, L)
         # Run different convolutions on input.
@@ -104,5 +124,8 @@ class SentenceCNN(nn.Module):
         xout = torch.cat(padded_results, 1)  # (B, C * n, L // 3)
         xout = xout.view(xout.size(0), -1)  # (B, C * n * (L // 3))
         x = self.fc1(xout)  # (B, 1024)
-        x = self.fc2(x)  # (B, N)
-        return x
+        if self.embeddings:
+            return xout, x
+        else:
+            x = self.fc2(x)  # (B, N)
+            return x

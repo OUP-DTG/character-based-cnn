@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import json
 import numpy as np
 from collections import Counter
@@ -8,6 +9,9 @@ from tqdm import tqdm
 from . import utils
 
 import torch
+
+LABELS_TO_CLASS_MAP = {'BE': 0, 'BS': 1, 'LU': 2, 'ZH': 3}
+CLASS_TO_LABELS_MAP = {v: k for k, v in LABELS_TO_CLASS_MAP.items()}
 
 
 def get_sample_weights(labels):
@@ -79,7 +83,7 @@ def load_data(args):
             # labels = list(map(lambda l: {'AG': 0, 'BE': 1, 'BS': 2, 'GL': 3, 'GR': 4, 'LU': 5, 'NW': 6, 'SG': 7,
             #                              'SH': 8, 'SZ': 9, 'UR': 10, 'VS': 11, 'ZH': 12}[l], labels))
 
-            labels = list(map(lambda l: {'BE': 0, 'BS': 1, 'LU': 2, 'ZH': 3}[l], labels))
+            labels = list(map(lambda l: LABELS_TO_CLASS_MAP[l], labels))
 
     if bool(args.balance):
 

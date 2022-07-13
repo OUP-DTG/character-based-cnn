@@ -5,7 +5,12 @@ src/__pycache__/
 .vscode/
 logs/
 models/
+.idea/
 venv/
 venv2/
 __pycache__/
-.idea/
+src/archimob_balanced_embeddings/tensors.full.pt
+src/archimob_embeddings/tensors.full.pt
+src/embeddings/tensors.full.pt
+src/swissdial_balanced_embeddings/tensors.full.pt
+src/swissdial_embeddings/tensors.full.pt
