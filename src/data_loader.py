@@ -10,7 +10,7 @@ from . import utils
 
 import torch
 
-LABELS_TO_CLASS_MAP = {'BE': 0, 'BS': 1, 'LU': 2, 'ZH': 3}
+LABELS_TO_CLASS_MAP = {'BE': 0, 'BS': 1, 'LU': 2, 'ZH': 3, 'DE': 4, 'OT': 5}
 CLASS_TO_LABELS_MAP = {v: k for k, v in LABELS_TO_CLASS_MAP.items()}
 
 
@@ -63,7 +63,7 @@ def load_data(args):
             texts = [text for (text, label) in clean_data]
             labels = [label for (text, label) in clean_data]
 
-            labels = list(map(lambda l: {1: 0, 2: 0, 4: 1, 5: 1}[l], labels))  # TODO is this line making all labels 1 and 0?
+            labels = list(map(lambda l: {1: 0, 2: 0, 4: 1, 5: 1}[l], labels))
 
         else:
 

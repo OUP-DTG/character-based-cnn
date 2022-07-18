@@ -6,7 +6,8 @@ import argparse
 def read_cli_arguments():
 
     parser = argparse.ArgumentParser("Character Based CNN for text classification")
-    parser.add_argument("--data_path", type=str, default="archimob_sentences_deduplicated.csv")
+    # parser.add_argument("--data_path", type=str, default="archimob_sentences_deduplicated.csv")
+    parser.add_argument("--data_path", type=str, default="training_data_archi_swiss_6_labels_undersample.csv")
     parser.add_argument("--validation_split", type=float, default=0.2)
     parser.add_argument("--label_column", type=str, default="dialect_norm")
     parser.add_argument("--text_column", type=str, default="sentence")
@@ -18,7 +19,8 @@ def read_cli_arguments():
     # parser.add_argument("--group_labels", type=int, default=0, choices=[0, 1])
     parser.add_argument("--group_labels", type=int, default=1, choices=[0, 1])
     parser.add_argument("--ignore_center", type=int, default=0, choices=[0, 1])
-    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ', "DE"])
+    # parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ', "DE"])
+    parser.add_argument("--label_ignored", type=list, default=['AG', 'GL', 'GR', 'NW', 'SG', 'SH', 'UR', 'VS', 'SZ'])
     parser.add_argument("--ratio", type=float, default=1)
     parser.add_argument("--balance", type=int, default=0, choices=[0, 1])
     parser.add_argument("--use_sampler", type=int, default=0, choices=[0, 1])
@@ -37,7 +39,7 @@ def read_cli_arguments():
     )
     """
 
-    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial'])
+    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial', 'both'])
     # parser.add_argument("--number_of_characters", type=int, default=102)  # 95+7
     # parser.add_argument("--number_of_characters", type=int, default=NUM_SG_CHARS)
     # parser.add_argument("--extra_characters", type=str, default="äöüÄÖÜß")
@@ -73,7 +75,7 @@ def read_cli_arguments():
     parser.add_argument("--output", type=str, default="./models/")
     parser.add_argument("--model_name", type=str, default="test_model")
     parser.add_argument("--embeddings", action="store_true", help="flag to extract embeddings")
-    parser.add_argument("--kfolds", type=int)
+    parser.add_argument("--kfolds", type=int, default=5)
 
     args = parser.parse_args()
 

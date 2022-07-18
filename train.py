@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 
 from src.data_loader import MyDataset, load_data
 from src import utils
-from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET
+from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET, COMBINED_ALPHABET
 from src.focal_loss import FocalLoss
 
 from cli_arguments import read_cli_arguments
@@ -404,6 +404,9 @@ if __name__ == "__main__":
     elif args.input_alphabet == 'archimob':
         setattr(args, 'alphabet', SWISS_GERMAN_ARCHIMOB_ALPHABET)
         setattr(args, 'number_of_characters', len(SWISS_GERMAN_ARCHIMOB_ALPHABET))
+    elif args.input_alphabet == 'both':
+        setattr(args, 'alphabet', COMBINED_ALPHABET)
+        setattr(args, 'number_of_characters', len(COMBINED_ALPHABET))
     else:
         print("Wrong input alphabet value. Valid values are 'archimob' or 'swissdial'")
         sys.exit()

@@ -15,6 +15,7 @@ from torch.nn.functional import pad
 
 SWISS_GERMAN_ARCHIMOB_ALPHABET = "() *,-./0123456789?ABCDEFGHIJKLMNOPRSTUVWZ_abcdefghijklmnoprstuvwxyzàáãäèéìíòóõöùúüĩǜ̀́ẽ"
 SWISS_GERMAN_SWISSDIAL_ALPHABET = "0123456789ABDEGHLRSUVZ_ abcdefghijklmnopqrstuvwxyzßàáâãäçèéêëíïñòóôöøüě"
+COMBINED_ALPHABET = "".join(sorted(set(SWISS_GERMAN_ARCHIMOB_ALPHABET + SWISS_GERMAN_SWISSDIAL_ALPHABET)))
 
 
 def reset_weights(m):
