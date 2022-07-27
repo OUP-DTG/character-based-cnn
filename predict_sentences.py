@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 
-from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET
+from src.sentence_model import SentenceCNN, SWISS_GERMAN_ARCHIMOB_ALPHABET, SWISS_GERMAN_SWISSDIAL_ALPHABET, COMBINED_ALPHABET
 from src.data_loader import CLASS_TO_LABELS_MAP
 from src.utils import process_text, encode_string
 
@@ -24,11 +24,12 @@ def preprocess_input(args):
         args.data_path,
         chunksize=args.chunksize,
         encoding=args.encoding,
-        names=['text']
+        # names=['text']
     )
 
     output_chunks = []
     for df_chunk in chunks:
+        # print(df_chunk)
         aux_df = df_chunk.copy()
         aux_df["processed_text"] = aux_df['text'].map(
             lambda text: process_text(args.steps, text)
@@ -70,7 +71,7 @@ def predict(args):
         pred_label = [CLASS_TO_LABELS_MAP[x] for x in pred_class]
 
         prob_df = pd.DataFrame(probabilities, columns=output_columns)
-        chunk_df = pd.concat([chunk_df, prob_df.copy()], axis=1)
+        chunk_df = pd.concat([chunk_df, prob_df.copy().reset_index(drop=True, inplace=True)], axis=1)
         chunk_df['pred_class'] = pred_class
         chunk_df['pred_label'] = pred_label
         chunk_df.drop(columns=['processed_text'], inplace=True)
@@ -86,12 +87,12 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, help="path for pre-trained model")
     parser.add_argument("--data_path", type=str, default="archimob_sentences.predict_test.random1K.csv")
     parser.add_argument("--steps", nargs="+", default=["lower"])
-    parser.add_argument("--chunksize", type=int, default=50000)
+    parser.add_argument("--chunksize", type=int, default=40000)
     parser.add_argument("--encoding", type=str, default="utf-8")
     parser.add_argument("--sep", type=str, default=",")
 
-    # arguments needed for the predicition
-    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial'])
+    # arguments needed for the prediction
+    parser.add_argument("--input_alphabet", type=str, choices=['archimob', 'swissdial', 'both'])
     parser.add_argument("--extra_characters", type=str, default="")
     parser.add_argument("--max_length", type=int, default=150)
     parser.add_argument("--number_of_classes", type=int, default=4)
@@ -107,6 +108,9 @@ if __name__ == "__main__":
     elif args.input_alphabet == 'archimob':
         setattr(args, 'alphabet', SWISS_GERMAN_ARCHIMOB_ALPHABET)
         setattr(args, 'number_of_characters', len(SWISS_GERMAN_ARCHIMOB_ALPHABET))
+    elif args.input_alphabet == 'both':
+        setattr(args, 'alphabet', COMBINED_ALPHABET)
+        setattr(args, 'number_of_characters', len(COMBINED_ALPHABET))
     else:
         print("Wrong input alphabet value. Valid values are 'archimob' or 'swissdial'")
         sys.exit()
