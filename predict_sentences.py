@@ -67,13 +67,15 @@ def predict(args, input_file):
 
         prediction = model(processed_input)
         probabilities = F.softmax(prediction, dim=1)
-        probabilities = probabilities.detach().cpu().numpy()
-        pred_class = torch.max(prediction, 1)[1].cpu().numpy().tolist()
+        confidence, pred_class = torch.max(probabilities, 1)
+        confidence = confidence.detach().cpu().numpy().tolist()
+        pred_class = pred_class.cpu().numpy().tolist()
         pred_label = [CLASS_TO_LABELS_MAP[x] for x in pred_class]
 
-        prob_df = pd.DataFrame(probabilities, columns=output_columns)
+        prob_df = pd.DataFrame(probabilities.detach().cpu().numpy(), columns=output_columns)
         chunk_df = pd.concat([chunk_df, prob_df.copy().reset_index(drop=True, inplace=True)], axis=1)
         chunk_df['pred_class'] = pred_class
+        chunk_df['confidence'] = confidence
         chunk_df['pred_label'] = pred_label
         chunk_df.drop(columns=['processed_text'], inplace=True)
         data_chunks[idx] = chunk_df
