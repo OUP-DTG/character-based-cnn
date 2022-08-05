@@ -129,4 +129,5 @@ if __name__ == "__main__":
         prediction_df = pd.concat(prediction_df)
 
         # save to file
-        prediction_df.to_csv(f'dialect_classified_data/2017/dialect_class_{filename}', index=False, encoding=args.encoding)
+        # prediction_df.to_csv(f'dialect_classified_data/2017/dialect_class_{filename}', index=False, encoding=args.encoding)
+        prediction_df.to_csv(f'different_sentence_split/dialect_classified_2017/dialect_class_{filename}', index=False, encoding=args.encoding)

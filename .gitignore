@@ -14,3 +14,8 @@ src/archimob_embeddings/tensors.full.pt
 src/embeddings/tensors.full.pt
 src/swissdial_balanced_embeddings/tensors.full.pt
 src/swissdial_embeddings/tensors.full.pt
+dialect_classified_data/
+different_sentence_split/
+*.out
+*.csv.gz
+predict_sentencess3.py
